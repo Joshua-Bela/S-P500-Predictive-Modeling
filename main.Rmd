@@ -1,0 +1,153 @@
+---
+title: "What the Holt?!"
+author: "Joshua Bela"
+date: "October 31, 2019"
+output: word_document
+---
+
+import data
+```{r}
+# import libraries
+library(randomForest)#na.roughfix
+library(forecast)#Acf(); subset()
+library(tseries)#kpss.test()
+library(dplyr)#select()
+library(aTSA)#adf.test(); arch.test()
+library(forecast)#arima(); forecast.Arima()
+library(stats)#Box.test(x, lag = 1, type = c("Box-Pierce", "Ljung-Box"), fitdf = 0)
+
+# import data
+data = read.csv("data/State_time_series.csv")
+# filter variables
+data_sub = data %>% select(Date, Sale_Counts_Seas_Adj)
+# filter NA values
+data_sub = data_sub[!is.na(data_sub$Date) & !is.na(data_sub$Sale_Counts_Seas_Adj),]
+# convert to time series object
+ts1 = ts(data_sub$Sale_Counts_Seas_Adj)
+
+```
+
+2.	Plot out your time series variable.
+```{r}
+# plot time series
+plot.ts(ts1)
+
+```
+Tell me using your Mark I eyeball whether or not you think the time series data set is stationary in terms of constant mean and also constant variance.
+It appears as though the mean is increasing and the variance is increasing in turn.  It appears non-stationary.
+
+
+3.	Plot the ACF for the time series data set.
+```{r}
+acf(data_sub$Sale_Counts_Seas_Adj, lag.max = 10)
+
+```
+Looking at ACF, does it look like there may be a trend or non-constant mean for each time series?
+I can't confidently say visually.  The only pattern that I detect is a decrease in absolute value, but I don't see cycles.
+
+
+4.	Now let’s examine the time series data set using unit root tests.   First use the KPSS test for the time series data set and 
+
+```{r}
+kpss.test(ts1)
+
+```
+tell me if the test suggests if there is a constant mean or not.
+Based on the p-value for the KPSS test, which is less than .05, the time series has a constant mean.
+
+Then see if you can confirm your KPSS evaluation using the Augmented Dickey Fuller (ADF) or the ADF-GLS test for each time series.
+```{r}
+adf.test(ts1)
+
+```
+What is your decision concerning constant mean?
+According to the ADF test, the time series has a constant mean.
+
+
+5.	Review the decisions in step #4.  If the test suggests that there is a non-constant mean then use differencing to create a new differenced variable for the time series data set.  
+N/A
+
+
+
+6.	Test each of the time series data sets for constant variance using the ARCH test (GRETL does this nicely).  Tell me which ones might have issues with constant variance and so not be so nicely stationary.  Note that we will not do anything about this issue for the moment, but it’s good to know.
+```{r}
+arch.test(ts1 %>% arima())
+
+```
+Based on the p-values from the ARCH test, which are less than .05, there is non-constant variance, so the time series is not purely stationary.
+
+
+
+7.	Plot the PACF for the time series data sets.  Using the combined information from the ACF you plotted earlier along with the information in the PACF, tell me if you see autoregressive and/or moving average processes in the data set.  To help with interpretation you may want to refer to online resources – here is a decent resource from Duke University https://people.duke.edu/~rnau/411arim3.htm  or  Penn State https://onlinecourses.science.psu.edu/stat510/node/64
+```{r}
+pacf(ts1, lag.max = 500)
+
+```
+Concerning the ACF plot, there are no significant lags.
+Concerning the PACF plot, the lags are decreasing geometrically, although the trend is only visible with n observed in hundreds.
+Conclusion:  This is a moving average model with order q = 1.
+
+
+8.	For your time series data set, experiment with different ARIMA models for them.  As you try them, list out the results of the various models and
+a.	Comment on how each one is working and compare it to the previous model using various metrics such as SBC, BIC, Box Leung, etc.   Most students end up creating a small table with these statistics across the models tried so it is easy to compare them.   
+c.	Pick one of the models as your favorite and tell me why you like that one the best.
+```{r}
+
+df = data.frame()
+arimas = list()
+for(p in 6:8){
+  for(d in 0:2){
+    for(q in 6:8){
+      arima1 = Arima(ts1, order = c(p,d,q))
+      arimas[[length(arimas) + 1]] = arima1
+      df = df %>% rbind(c(
+        p, d, q, arima1$bic, Box.test(arima1$fitted, lag = 1, type = "Ljung-Box", fitdf = 0)$p.value
+        %>% round(digits = 2)
+      ))
+    }
+  }
+}
+colnames(df) = c("p", "d", "q", "BIC", "Ljung-Box")
+df = df[order(df$BIC),]
+print(df)
+
+```
+I built nested for loops to try multiple combinations of p, d, and q, then printed a table with each model's BIC and Ljung-Box score, sorted in descending order of BIC.
+
+The best model, according to the BIC and Ljung-Box statistics, is ARIMA(6, 1, 8).
+
+
+b.	Plot the observed versus fitted data for the time series data set and comment on how well the model seems to be working
+```{r}
+arima1 = Arima(ts1, order = c(df$p[1],df$d[1],df$q[1]))
+
+arima1$x %>% subset(start = 1, end = 100) %>% ts.plot(
+  arima1$fitted %>% subset(start = 1, end = 100),
+  col = c("blue", "red")
+)
+
+```
+Considering the variability of the original data, this model appears to perform admirably well.
+It's doing the best it can to account for the periodic oscillations.
+
+
+d.	Forecast out your favorite model for the next 6 time periods and plot your time series plus the forecasted data.  Does it look good or funky?
+```{r}
+hx = ts1[(length(ts1) - 365.25*1):length(ts1)]
+
+forecast1 = (forecast::forecast(arima1, h = 30*6))$mean %>% as.numeric()
+
+plot(c(hx, forecast1), type = "l")
+```
+It doesn't look so good.  It appears as though the model doesn't account for the magnitude of the seasonal variation.  Moreover, this problem worsens the further out the forecast is, which makes sense as forecasting further out is more difficult.
+
+
+
+
+
+
+
+
+
+
+
