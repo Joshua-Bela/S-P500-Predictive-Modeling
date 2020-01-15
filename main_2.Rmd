@@ -1,0 +1,168 @@
+---
+title: "What the Holt?!"
+author: "Joshua Bela"
+date: "December 2, 2019"
+output: word_document
+---
+
+9.	For the time series data set with seasonality – start with the raw data before differencing here please!!!
+
+import data
+```{r}
+library(lubridate) #month() year()
+library(tseries)#kpss.test()
+library(dplyr)#select()
+library(rucm)
+
+# import data
+data = read.csv("data/State_time_series.csv")
+# filter variables
+data_sub = data %>% select(Date, Sale_Counts)
+# filter NA values
+data_sub = data_sub[!is.na(data_sub$Date) & !is.na(data_sub$Sale_Counts),]
+# write.csv(data_sub, "data/output.csv")
+
+```
+
+Monthify Data
+```{r}
+monthify = function(data){
+  month = year = NULL
+  sales = NULL
+  for(i in 1:nrow(data)){
+    month_local = data$Date[i] %>% month
+    year_local = data$Date[i] %>% year()
+    
+    if(sum(
+      c(month_local, year_local) == c(month, year)
+    ) == 2){
+      sales[length(sales)] = sales[length(sales)] + data$Sale_Counts[i]
+    }
+    else{
+      sales[length(sales) + 1] = data$Sale_Counts[i]
+      month = month_local
+      year = year_local
+    }
+  }
+  sales %>% return()
+}
+
+data_new = monthify(data_sub)
+data_new = data_new[-length(data_new)]
+data_new = data_new[11:length(data_new)]
+data_new = data.frame(
+  sales = data_new,
+  time = 1:length(data_new)
+)
+
+```
+
+a.	Plot out the time series and
+```{r}
+# convert to time series object
+ts1 = ts(data_new$sales, frequency = 12)
+
+# plot time series
+plot.ts(data_new$sales)
+
+```
+suggest whether a type 1, type 2 or type 3 Holt Winter model should be applied and why.
+Because trend and seasonality apply, we should use type 3.
+
+
+b.	Eyeball the size of the period. What do you think it might be?  Why is that?
+There appear to be 9 periods in the plot above.  As expected, this suggests annual seasonality.
+Why are these prices seasonal?  Prices of many various goods and services have annual seasonality.  I'm not sure why.  It could have something to do with the psychology of New Year celebration or with Christmas consumerism.
+
+
+c.	Use GRETL to do a periodogram for the data.  What does the periodogram suggest might be the period length for the data?
+12 months.
+
+
+d.	If a type 2 or type 3 model, then apply a KPSS or ADF test to test for trend.
+```{r}
+kpss.test(ts1)
+
+```
+Based on the p-value of the KPSS test, there is a trend.
+
+
+e.	Decide the weights you will use for the three components of Winter Holt smoothing –
+constant,
+trend and
+seasonality (gamma)
+– why these values?  If you are using SAS then read about these weights in the proc docs, otherwise fish around in the R or Python docs.
+```{r}
+model = HoltWinters(ts1)
+
+```
+In the HoltWinters() function for R, leaving NULL values for these components allows the learning algorithm to automatically optimize them, so I let the algorithm determine the optimal values.
+
+
+f.	Run the Holt Winter model and then, using sgplot or your other favorite plotting poison, plot the actual data and the fitted/forecast data on the same graph.
+```{r}
+model$x %>% ts.plot(
+  model$fitted,
+  col = c("blue", "red")
+)
+
+```
+How did the Holt-Winter model do in terms of forecasting?
+It looks fantastic!  Great job on the learning algorithm to optimize the parameters for trend and seasonality.  Quite robust function.
+
+
+g.	Next run the same data set using the Unobserved Components Model time series analytic technique.  Interpret the significance analysis of components table (based on final components in terms of 
+trend, 
+irregular (ARMA) and 
+seasonality 
+components in the data set – that is, which components are statistically significant?
+```{r}
+temp = data_new
+temp$sales = temp$sales/1000
+# write.csv(temp, "sales_monthly.csv")
+
+model2 <- ucm(formula = sales ~ 0, data = temp, level = T, irregular = T,
+              slope = T, season = T, season.length = 12)
+model2
+
+```
+Based on the infinitessimal p-values, trend, irregularity, and seasonality are all non-zero.
+
+
+h.	Have the UCM model produce fitted values for the existing data and forward 12 periods into the future and plot the original time series as well as the fitted/forecast data as well.
+```{r}
+fitted = rep(NA, 107)
+predictions = predict(model2$model, n.ahead = 12*12)
+
+NEW = c(fitted, predictions)
+ORIG = NEW
+ORIG[1:nrow(temp)] = temp$sales
+
+x = 1:length(NEW)
+plot(x, ORIG,
+main="Sales, Monthly",
+ylab="",
+type="l",
+col="blue")
+lines(x,NEW, col="red")
+legend("topleft",
+c("Original","Forecast"),
+fill=c("blue","red")
+)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
